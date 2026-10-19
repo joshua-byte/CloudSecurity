@@ -1,0 +1,1168 @@
+{
+  "name": "CloudPulse Security Rules",
+  "version": 1,
+  "source_folders": [
+    "iam-privilege-escalation",
+    "unusual-access",
+    "logging-tampering",
+    "security-group-changes"
+  ],
+  "rule_count": 17,
+  "rules": [
+    {
+      "id": "ACCESS-001",
+      "name": "Root Account API Activity",
+      "description": "Detects when the root account makes API calls other than console login. Root account usage should be extremely rare and limited to specific administrative tasks that cannot be performed by IAM users.",
+      "severity": "High",
+      "mitre_attack": {
+        "tactic": "Privilege Escalation",
+        "technique_id": "T1078.004",
+        "technique_name": "Valid Accounts: Cloud Accounts"
+      },
+      "detection": {
+        "eventSource": "any",
+        "eventName": "any except ConsoleLogin",
+        "conditions": [
+          "userIdentity.type equals 'Root'"
+        ]
+      },
+      "cloudwatch_filter_pattern": "{ ($.userIdentity.type = \"Root\") && ($.eventName != \"ConsoleLogin\") }",
+      "eventbridge_pattern": {
+        "source": [
+          "aws.cloudtrail"
+        ],
+        "detail-type": [
+          "AWS API Call via CloudTrail"
+        ],
+        "detail": {
+          "userIdentity": {
+            "type": [
+              "Root"
+            ]
+          }
+        }
+      },
+      "false_positives": [
+        "Legitimate root account usage for tasks requiring root (e.g., closing account)",
+        "Initial account setup before IAM users exist",
+        "Break-glass emergency procedures"
+      ],
+      "tuning_guidance": "Root account usage should trigger investigation in all cases. Document approved root usage procedures and verify all alerts against this documentation.",
+      "response": [
+        "1. Immediately identify the action performed and source IP",
+        "2. Verify against approved root account usage procedures",
+        "3. If unauthorized: Change root account password and MFA immediately",
+        "4. Review all root account activity in the time window",
+        "5. Check for any IAM changes or persistence mechanisms created",
+        "6. Enable root account activity alerts if not already configured"
+      ],
+      "compliance": {
+        "pci_dss": [
+          "8.1"
+        ],
+        "soc2": [
+          "CC6.1"
+        ],
+        "hipaa": [
+          "164.312(a)(1)"
+        ],
+        "cis_aws": [
+          "1.7"
+        ]
+      },
+      "category": "unusual-access"
+    },
+    {
+      "id": "ACCESS-002",
+      "name": "Console Login Without MFA",
+      "description": "Detects successful console logins where MFA was not used. This could indicate a compromised account where the attacker has the password but not the MFA device, or accounts that haven't been properly configured with MFA.",
+      "severity": "High",
+      "mitre_attack": {
+        "tactic": "Initial Access",
+        "technique_id": "T1078.004",
+        "technique_name": "Valid Accounts: Cloud Accounts"
+      },
+      "detection": {
+        "eventSource": "signin.amazonaws.com",
+        "eventName": [
+          "ConsoleLogin"
+        ],
+        "conditions": [
+          "additionalEventData.MFAUsed equals 'No'",
+          "responseElements.ConsoleLogin equals 'Success'"
+        ]
+      },
+      "cloudwatch_filter_pattern": "{ ($.eventSource = \"signin.amazonaws.com\") && ($.eventName = \"ConsoleLogin\") && ($.additionalEventData.MFAUsed = \"No\") && ($.responseElements.ConsoleLogin = \"Success\") }",
+      "eventbridge_pattern": {
+        "source": [
+          "aws.signin"
+        ],
+        "detail-type": [
+          "AWS Console Sign In via CloudTrail"
+        ],
+        "detail": {
+          "eventName": [
+            "ConsoleLogin"
+          ],
+          "additionalEventData": {
+            "MFAUsed": [
+              "No"
+            ]
+          },
+          "responseElements": {
+            "ConsoleLogin": [
+              "Success"
+            ]
+          }
+        }
+      },
+      "false_positives": [
+        "Accounts in the process of MFA enrollment",
+        "Legacy accounts that predate MFA requirements",
+        "Federated access that handles MFA at the IdP level"
+      ],
+      "tuning_guidance": "Exclude federated users (userIdentity.type = 'FederatedUser') if your organization uses SAML/SSO with MFA enforced at the identity provider.",
+      "response": [
+        "1. Identify the user and verify if they should have console access",
+        "2. Contact the user to verify the login was legitimate",
+        "3. If unexpected: Force logout and disable console access",
+        "4. Check if MFA was recently disabled for this user",
+        "5. Enforce MFA enrollment immediately",
+        "6. Review account activity since the non-MFA login"
+      ],
+      "compliance": {
+        "pci_dss": [
+          "8.3"
+        ],
+        "soc2": [
+          "CC6.1"
+        ],
+        "hipaa": [
+          "164.312(d)"
+        ],
+        "cis_aws": [
+          "1.10"
+        ]
+      },
+      "category": "unusual-access"
+    },
+    {
+      "id": "ACCESS-003",
+      "name": "Root Console Login",
+      "description": "Detects any console login by the root account. Root console access should be extremely rare and requires immediate attention regardless of whether it was authorized.",
+      "severity": "High",
+      "mitre_attack": {
+        "tactic": "Initial Access",
+        "technique_id": "T1078.004",
+        "technique_name": "Valid Accounts: Cloud Accounts"
+      },
+      "detection": {
+        "eventSource": "signin.amazonaws.com",
+        "eventName": [
+          "ConsoleLogin"
+        ],
+        "conditions": [
+          "userIdentity.type equals 'Root'"
+        ]
+      },
+      "cloudwatch_filter_pattern": "{ ($.eventSource = \"signin.amazonaws.com\") && ($.eventName = \"ConsoleLogin\") && ($.userIdentity.type = \"Root\") }",
+      "eventbridge_pattern": {
+        "source": [
+          "aws.signin"
+        ],
+        "detail-type": [
+          "AWS Console Sign In via CloudTrail"
+        ],
+        "detail": {
+          "eventName": [
+            "ConsoleLogin"
+          ],
+          "userIdentity": {
+            "type": [
+              "Root"
+            ]
+          }
+        }
+      },
+      "false_positives": [
+        "Authorized root account access for account-level changes",
+        "Initial account setup",
+        "Documented break-glass procedures"
+      ],
+      "tuning_guidance": "This rule should always alert. No tuning to reduce alerts is recommended. Instead, reduce root account usage.",
+      "response": [
+        "1. Immediately verify if this was an authorized root login",
+        "2. Identify the source IP and geographic location",
+        "3. If unauthorized: Change root password and MFA immediately",
+        "4. Review all actions taken during the root session",
+        "5. Check for any new IAM users, roles, or access keys created",
+        "6. Consider enabling root account hardware MFA key"
+      ],
+      "compliance": {
+        "pci_dss": [
+          "8.1"
+        ],
+        "soc2": [
+          "CC6.1"
+        ],
+        "hipaa": [
+          "164.312(a)(1)"
+        ],
+        "cis_aws": [
+          "1.7"
+        ]
+      },
+      "category": "unusual-access"
+    },
+    {
+      "id": "ACCESS-004",
+      "name": "Multiple Failed Console Login Attempts",
+      "description": "Detects multiple failed console login attempts which may indicate a brute force attack or credential stuffing attempt against AWS accounts.",
+      "severity": "High",
+      "mitre_attack": {
+        "tactic": "Credential Access",
+        "technique_id": "T1110.001",
+        "technique_name": "Brute Force: Password Guessing"
+      },
+      "detection": {
+        "eventSource": "signin.amazonaws.com",
+        "eventName": [
+          "ConsoleLogin"
+        ],
+        "conditions": [
+          "responseElements.ConsoleLogin equals 'Failure'",
+          "Count > 5 within 10 minutes from same sourceIPAddress or userName"
+        ]
+      },
+      "cloudwatch_filter_pattern": "{ ($.eventSource = \"signin.amazonaws.com\") && ($.eventName = \"ConsoleLogin\") && ($.responseElements.ConsoleLogin = \"Failure\") }",
+      "eventbridge_pattern": {
+        "source": [
+          "aws.signin"
+        ],
+        "detail-type": [
+          "AWS Console Sign In via CloudTrail"
+        ],
+        "detail": {
+          "eventName": [
+            "ConsoleLogin"
+          ],
+          "responseElements": {
+            "ConsoleLogin": [
+              "Failure"
+            ]
+          }
+        }
+      },
+      "false_positives": [
+        "Users who forgot their password",
+        "Password manager sync issues",
+        "Automated testing of login functionality"
+      ],
+      "tuning_guidance": "Set CloudWatch alarm threshold to trigger on >5 failures in 10 minutes. Consider separate alarms for individual users vs source IPs.",
+      "response": [
+        "1. Identify the target username and source IP(s)",
+        "2. Check if the IP is from a known corporate range",
+        "3. If external and targeting multiple accounts: Block IP at WAF/security group",
+        "4. Contact the target user to verify if they were attempting to log in",
+        "5. Consider temporarily disabling console access for targeted accounts",
+        "6. Monitor for successful login following failed attempts"
+      ],
+      "compliance": {
+        "pci_dss": [
+          "8.1.6"
+        ],
+        "soc2": [
+          "CC6.1"
+        ],
+        "hipaa": [
+          "164.312(a)(1)"
+        ],
+        "cis_aws": [
+          "1.10"
+        ]
+      },
+      "category": "unusual-access"
+    },
+    {
+      "id": "ACCESS-005",
+      "name": "Unauthorized API Calls (Access Denied)",
+      "description": "Detects API calls that result in access denied errors. Excessive access denied errors may indicate reconnaissance activity, misconfigured applications, or an attacker testing permissions after gaining initial access.",
+      "severity": "Medium",
+      "mitre_attack": {
+        "tactic": "Discovery",
+        "technique_id": "T1580",
+        "technique_name": "Cloud Infrastructure Discovery"
+      },
+      "detection": {
+        "eventSource": "any",
+        "eventName": "any",
+        "conditions": [
+          "errorCode equals 'UnauthorizedAccess' OR 'AccessDenied' OR 'AccessDeniedException'"
+        ]
+      },
+      "cloudwatch_filter_pattern": "{ ($.errorCode = \"*UnauthorizedAccess*\") || ($.errorCode = \"AccessDenied*\") || ($.errorCode = \"*AccessDeniedException*\") }",
+      "eventbridge_pattern": {
+        "source": [
+          "aws.cloudtrail"
+        ],
+        "detail-type": [
+          "AWS API Call via CloudTrail"
+        ],
+        "detail": {
+          "errorCode": [
+            "UnauthorizedAccess",
+            "AccessDenied",
+            "AccessDeniedException",
+            "Client.UnauthorizedAccess"
+          ]
+        }
+      },
+      "false_positives": [
+        "Applications with overly broad API calls that get partially denied",
+        "New users learning the environment",
+        "Misconfigured service accounts"
+      ],
+      "tuning_guidance": "Set threshold for >10 access denied errors from same principal in 5 minutes. Exclude known noisy services or applications after review.",
+      "response": [
+        "1. Identify the principal and the actions being denied",
+        "2. Determine if this is a misconfigured application or potential attack",
+        "3. If reconnaissance suspected: Review all activity from this principal",
+        "4. If misconfiguration: Work with application team to fix permissions",
+        "5. Look for successful calls interspersed with denied calls (permission enumeration)",
+        "6. Check if the principal recently had permissions removed"
+      ],
+      "compliance": {
+        "pci_dss": [
+          "10.2.4"
+        ],
+        "soc2": [
+          "CC6.8"
+        ],
+        "hipaa": [
+          "164.312(b)"
+        ],
+        "cis_aws": [
+          "3.1"
+        ]
+      },
+      "category": "unusual-access"
+    },
+    {
+      "id": "IAM-001",
+      "name": "Self-Escalation via Inline Policy",
+      "description": "Detects when a user attaches an inline policy with wildcard permissions to themselves. This is a common privilege escalation technique where an attacker with limited IAM write permissions grants themselves full administrative access.",
+      "severity": "Critical",
+      "mitre_attack": {
+        "tactic": "Privilege Escalation",
+        "technique_id": "T1098.001",
+        "technique_name": "Account Manipulation: Additional Cloud Credentials"
+      },
+      "detection": {
+        "eventSource": "iam.amazonaws.com",
+        "eventName": [
+          "PutUserPolicy",
+          "PutRolePolicy"
+        ],
+        "conditions": [
+          "userIdentity.userName equals requestParameters.userName (self-modification)",
+          "requestParameters.policyDocument contains 'Action': '*' or 'Action': 'iam:*'"
+        ]
+      },
+      "cloudwatch_filter_pattern": "{ ($.eventSource = \"iam.amazonaws.com\") && (($.eventName = \"PutUserPolicy\") || ($.eventName = \"PutRolePolicy\")) }",
+      "eventbridge_pattern": {
+        "source": [
+          "aws.cloudtrail"
+        ],
+        "detail-type": [
+          "AWS API Call via CloudTrail"
+        ],
+        "detail": {
+          "eventSource": [
+            "iam.amazonaws.com"
+          ],
+          "eventName": [
+            "PutUserPolicy",
+            "PutRolePolicy"
+          ]
+        }
+      },
+      "false_positives": [
+        "Terraform or CloudFormation automation creating IAM resources",
+        "Authorized administrators updating policies during approved changes",
+        "CI/CD pipelines with legitimate IAM management permissions"
+      ],
+      "tuning_guidance": "Exclude known automation roles: && ($.userIdentity.userName != \"terraform-runner\") && ($.userIdentity.userName != \"cloudformation-service-role\")",
+      "response": [
+        "1. Identify the actor (userIdentity.userName) and source IP (sourceIPAddress)",
+        "2. Review the policy document in requestParameters for unauthorized permissions",
+        "3. Check if this was a planned change by contacting the user/team",
+        "4. If unauthorized: Remove the inline policy immediately using DeleteUserPolicy",
+        "5. Investigate how the user obtained iam:PutUserPolicy permission",
+        "6. Review CloudTrail for other actions by this user in the same timeframe"
+      ],
+      "compliance": {
+        "pci_dss": [
+          "7.1",
+          "7.2"
+        ],
+        "soc2": [
+          "CC6.1"
+        ],
+        "hipaa": [
+          "164.312(a)(1)"
+        ],
+        "cis_aws": [
+          "1.16"
+        ]
+      },
+      "category": "iam-privilege-escalation"
+    },
+    {
+      "id": "IAM-002",
+      "name": "Cross-Identity Access Key Creation",
+      "description": "Detects when a user creates access keys for a different user. This technique is used by attackers to create backdoor credentials that persist even if the original compromised user is disabled.",
+      "severity": "High",
+      "mitre_attack": {
+        "tactic": "Persistence",
+        "technique_id": "T1098.001",
+        "technique_name": "Account Manipulation: Additional Cloud Credentials"
+      },
+      "detection": {
+        "eventSource": "iam.amazonaws.com",
+        "eventName": [
+          "CreateAccessKey"
+        ],
+        "conditions": [
+          "userIdentity.userName does NOT equal requestParameters.userName"
+        ]
+      },
+      "cloudwatch_filter_pattern": "{ ($.eventSource = \"iam.amazonaws.com\") && ($.eventName = \"CreateAccessKey\") && ($.userIdentity.userName != $.requestParameters.userName) }",
+      "eventbridge_pattern": {
+        "source": [
+          "aws.cloudtrail"
+        ],
+        "detail-type": [
+          "AWS API Call via CloudTrail"
+        ],
+        "detail": {
+          "eventSource": [
+            "iam.amazonaws.com"
+          ],
+          "eventName": [
+            "CreateAccessKey"
+          ]
+        }
+      },
+      "false_positives": [
+        "IAM administrators creating keys for new users during onboarding",
+        "Automated key rotation scripts running under service accounts",
+        "Break-glass procedures creating emergency access"
+      ],
+      "tuning_guidance": "Consider alerting only when the actor is not in an approved IAM admin group. Add user agent filtering to exclude known management tools.",
+      "response": [
+        "1. Identify both the actor and the target user",
+        "2. Verify if this was an authorized administrative action",
+        "3. If unauthorized: Immediately deactivate the newly created access key",
+        "4. Review CloudTrail for any API calls made using the new key",
+        "5. Investigate the actor's account for signs of compromise",
+        "6. Consider rotating all access keys for the target user"
+      ],
+      "compliance": {
+        "pci_dss": [
+          "8.1",
+          "8.2"
+        ],
+        "soc2": [
+          "CC6.2"
+        ],
+        "hipaa": [
+          "164.312(d)"
+        ],
+        "cis_aws": [
+          "1.4"
+        ]
+      },
+      "category": "iam-privilege-escalation"
+    },
+    {
+      "id": "IAM-003",
+      "name": "Administrative Policy Attachment",
+      "description": "Detects when highly privileged AWS managed policies (AdministratorAccess, IAMFullAccess, PowerUserAccess) are attached to any principal. These policies grant extensive permissions that could enable full account compromise.",
+      "severity": "Critical",
+      "mitre_attack": {
+        "tactic": "Privilege Escalation",
+        "technique_id": "T1098.001",
+        "technique_name": "Account Manipulation: Additional Cloud Credentials"
+      },
+      "detection": {
+        "eventSource": "iam.amazonaws.com",
+        "eventName": [
+          "AttachUserPolicy",
+          "AttachRolePolicy",
+          "AttachGroupPolicy"
+        ],
+        "conditions": [
+          "requestParameters.policyArn contains 'AdministratorAccess'",
+          "OR requestParameters.policyArn contains 'IAMFullAccess'",
+          "OR requestParameters.policyArn contains 'PowerUserAccess'"
+        ]
+      },
+      "cloudwatch_filter_pattern": "{ ($.eventSource = \"iam.amazonaws.com\") && (($.eventName = \"AttachUserPolicy\") || ($.eventName = \"AttachRolePolicy\") || ($.eventName = \"AttachGroupPolicy\")) && (($.requestParameters.policyArn = \"*AdministratorAccess*\") || ($.requestParameters.policyArn = \"*IAMFullAccess*\") || ($.requestParameters.policyArn = \"*PowerUserAccess*\")) }",
+      "eventbridge_pattern": {
+        "source": [
+          "aws.cloudtrail"
+        ],
+        "detail-type": [
+          "AWS API Call via CloudTrail"
+        ],
+        "detail": {
+          "eventSource": [
+            "iam.amazonaws.com"
+          ],
+          "eventName": [
+            "AttachUserPolicy",
+            "AttachRolePolicy",
+            "AttachGroupPolicy"
+          ]
+        }
+      },
+      "false_positives": [
+        "Initial account setup creating admin users",
+        "Terraform deploying infrastructure with admin roles",
+        "Emergency break-glass procedures"
+      ],
+      "tuning_guidance": "This rule should have very few false positives in mature environments. Consider requiring approval workflow for any admin policy attachments.",
+      "response": [
+        "1. Immediately identify the principal that received admin access",
+        "2. Verify this was an approved change through change management",
+        "3. If unauthorized: Detach the policy immediately",
+        "4. Review all actions taken by the principal after policy attachment",
+        "5. Investigate the actor who attached the policy",
+        "6. Consider implementing SCP to prevent admin policy attachment"
+      ],
+      "compliance": {
+        "pci_dss": [
+          "7.1",
+          "7.2"
+        ],
+        "soc2": [
+          "CC6.1"
+        ],
+        "hipaa": [
+          "164.312(a)(1)"
+        ],
+        "cis_aws": [
+          "1.16"
+        ]
+      },
+      "category": "iam-privilege-escalation"
+    },
+    {
+      "id": "IAM-004",
+      "name": "Policy Version Escalation",
+      "description": "Detects when a new policy version is created and immediately set as default. Attackers with iam:CreatePolicyVersion permission can modify existing policies to grant themselves additional permissions, bypassing the need to attach new policies.",
+      "severity": "High",
+      "mitre_attack": {
+        "tactic": "Privilege Escalation",
+        "technique_id": "T1098.001",
+        "technique_name": "Account Manipulation: Additional Cloud Credentials"
+      },
+      "detection": {
+        "eventSource": "iam.amazonaws.com",
+        "eventName": [
+          "CreatePolicyVersion"
+        ],
+        "conditions": [
+          "requestParameters.setAsDefault equals true"
+        ]
+      },
+      "cloudwatch_filter_pattern": "{ ($.eventSource = \"iam.amazonaws.com\") && ($.eventName = \"CreatePolicyVersion\") && ($.requestParameters.setAsDefault IS TRUE) }",
+      "eventbridge_pattern": {
+        "source": [
+          "aws.cloudtrail"
+        ],
+        "detail-type": [
+          "AWS API Call via CloudTrail"
+        ],
+        "detail": {
+          "eventSource": [
+            "iam.amazonaws.com"
+          ],
+          "eventName": [
+            "CreatePolicyVersion"
+          ],
+          "requestParameters": {
+            "setAsDefault": [
+              true
+            ]
+          }
+        }
+      },
+      "false_positives": [
+        "Legitimate policy updates through Terraform or CloudFormation",
+        "Security team tightening policy permissions",
+        "Approved policy modifications during change windows"
+      ],
+      "tuning_guidance": "Review the policy document diff between versions. Alert on policies that add Action:* or Resource:* wildcards.",
+      "response": [
+        "1. Retrieve the policy document for the new version",
+        "2. Compare with the previous version to identify permission changes",
+        "3. If permissions were expanded without approval: Revert to previous version",
+        "4. Identify all principals attached to this policy",
+        "5. Investigate the actor's other recent activities",
+        "6. Review if the actor should have iam:CreatePolicyVersion permission"
+      ],
+      "compliance": {
+        "pci_dss": [
+          "7.1"
+        ],
+        "soc2": [
+          "CC6.1"
+        ],
+        "hipaa": [
+          "164.312(a)(1)"
+        ],
+        "cis_aws": [
+          "1.16"
+        ]
+      },
+      "category": "iam-privilege-escalation"
+    },
+    {
+      "id": "IAM-005",
+      "name": "Console Access Created for User",
+      "description": "Detects when console login access is enabled for an IAM user. This could indicate an attacker creating persistent access to the AWS console, or backdoor user creation.",
+      "severity": "Medium",
+      "mitre_attack": {
+        "tactic": "Persistence",
+        "technique_id": "T1136.003",
+        "technique_name": "Create Account: Cloud Account"
+      },
+      "detection": {
+        "eventSource": "iam.amazonaws.com",
+        "eventName": [
+          "CreateLoginProfile"
+        ],
+        "conditions": []
+      },
+      "cloudwatch_filter_pattern": "{ ($.eventSource = \"iam.amazonaws.com\") && ($.eventName = \"CreateLoginProfile\") }",
+      "eventbridge_pattern": {
+        "source": [
+          "aws.cloudtrail"
+        ],
+        "detail-type": [
+          "AWS API Call via CloudTrail"
+        ],
+        "detail": {
+          "eventSource": [
+            "iam.amazonaws.com"
+          ],
+          "eventName": [
+            "CreateLoginProfile"
+          ]
+        }
+      },
+      "false_positives": [
+        "New user onboarding by HR/IT",
+        "Service account being converted to human user",
+        "Password reset processes"
+      ],
+      "tuning_guidance": "Correlate with CreateUser events. Alert on CreateLoginProfile without a preceding approved CreateUser in the same session.",
+      "response": [
+        "1. Identify the user receiving console access",
+        "2. Verify this aligns with user onboarding records",
+        "3. If unexpected: Disable the login profile immediately",
+        "4. Check if the user already existed or was newly created",
+        "5. Review permissions assigned to this user",
+        "6. Ensure MFA is required for the new console user"
+      ],
+      "compliance": {
+        "pci_dss": [
+          "8.1",
+          "8.2"
+        ],
+        "soc2": [
+          "CC6.2"
+        ],
+        "hipaa": [
+          "164.312(d)"
+        ],
+        "cis_aws": [
+          "1.10"
+        ]
+      },
+      "category": "iam-privilege-escalation"
+    },
+    {
+      "id": "LOG-001",
+      "name": "CloudTrail Logging Stopped",
+      "description": "Detects when CloudTrail logging is stopped. This is one of the first actions an attacker takes after gaining access—disabling logging prevents detection of subsequent malicious activity. Any StopLogging event outside of planned maintenance is a critical security incident.",
+      "severity": "Critical",
+      "mitre_attack": {
+        "tactic": "Defense Evasion",
+        "technique_id": "T1562.008",
+        "technique_name": "Impair Defenses: Disable Cloud Logs"
+      },
+      "detection": {
+        "eventSource": "cloudtrail.amazonaws.com",
+        "eventName": [
+          "StopLogging"
+        ],
+        "conditions": []
+      },
+      "cloudwatch_filter_pattern": "{ ($.eventSource = \"cloudtrail.amazonaws.com\") && ($.eventName = \"StopLogging\") }",
+      "eventbridge_pattern": {
+        "source": [
+          "aws.cloudtrail"
+        ],
+        "detail-type": [
+          "AWS API Call via CloudTrail"
+        ],
+        "detail": {
+          "eventSource": [
+            "cloudtrail.amazonaws.com"
+          ],
+          "eventName": [
+            "StopLogging"
+          ]
+        }
+      },
+      "false_positives": [
+        "Planned CloudTrail maintenance (extremely rare)",
+        "Trail reconfiguration requiring stop/start"
+      ],
+      "tuning_guidance": "No tuning recommended. This alert should fire in all cases and requires immediate investigation. Even planned maintenance should generate an alert that is then documented as expected.",
+      "response": [
+        "1. Immediately restart logging using StartLogging",
+        "2. This is a CRITICAL incident—assume compromise until proven otherwise",
+        "3. Identify the actor and source IP from this final logged event",
+        "4. Review all actions by this actor prior to StopLogging",
+        "5. Check for evidence of the attack continuing in other log sources",
+        "6. Consider isolating potentially compromised resources",
+        "7. Engage incident response team immediately"
+      ],
+      "compliance": {
+        "pci_dss": [
+          "10.2",
+          "10.3"
+        ],
+        "soc2": [
+          "CC7.2"
+        ],
+        "hipaa": [
+          "164.312(b)"
+        ],
+        "cis_aws": [
+          "3.1"
+        ]
+      },
+      "category": "logging-tampering"
+    },
+    {
+      "id": "LOG-002",
+      "name": "CloudTrail Trail Deleted",
+      "description": "Detects when a CloudTrail trail is deleted. Trail deletion destroys the logging configuration and is a strong indicator of an attacker attempting to cover their tracks.",
+      "severity": "Critical",
+      "mitre_attack": {
+        "tactic": "Defense Evasion",
+        "technique_id": "T1562.008",
+        "technique_name": "Impair Defenses: Disable Cloud Logs"
+      },
+      "detection": {
+        "eventSource": "cloudtrail.amazonaws.com",
+        "eventName": [
+          "DeleteTrail"
+        ],
+        "conditions": []
+      },
+      "cloudwatch_filter_pattern": "{ ($.eventSource = \"cloudtrail.amazonaws.com\") && ($.eventName = \"DeleteTrail\") }",
+      "eventbridge_pattern": {
+        "source": [
+          "aws.cloudtrail"
+        ],
+        "detail-type": [
+          "AWS API Call via CloudTrail"
+        ],
+        "detail": {
+          "eventSource": [
+            "cloudtrail.amazonaws.com"
+          ],
+          "eventName": [
+            "DeleteTrail"
+          ]
+        }
+      },
+      "false_positives": [
+        "Account decommissioning",
+        "Trail consolidation during AWS Organizations setup",
+        "Terraform destroy operations"
+      ],
+      "tuning_guidance": "All trail deletions should alert. Cross-reference with change management before dismissing as false positive.",
+      "response": [
+        "1. Immediately recreate the trail or enable organization trail",
+        "2. Treat as confirmed security incident pending investigation",
+        "3. Identify the actor and investigate their access",
+        "4. Check S3 bucket for existing logs (may not have been deleted)",
+        "5. Review all activity by this actor before deletion",
+        "6. Implement SCP to prevent CloudTrail deletion"
+      ],
+      "compliance": {
+        "pci_dss": [
+          "10.2",
+          "10.3"
+        ],
+        "soc2": [
+          "CC7.2"
+        ],
+        "hipaa": [
+          "164.312(b)"
+        ],
+        "cis_aws": [
+          "3.1"
+        ]
+      },
+      "category": "logging-tampering"
+    },
+    {
+      "id": "LOG-003",
+      "name": "CloudTrail Configuration Changed",
+      "description": "Detects when a CloudTrail trail configuration is modified. Changes might include disabling log file validation, changing the S3 bucket, or disabling multi-region logging—all of which could weaken security visibility.",
+      "severity": "High",
+      "mitre_attack": {
+        "tactic": "Defense Evasion",
+        "technique_id": "T1562.008",
+        "technique_name": "Impair Defenses: Disable Cloud Logs"
+      },
+      "detection": {
+        "eventSource": "cloudtrail.amazonaws.com",
+        "eventName": [
+          "UpdateTrail"
+        ],
+        "conditions": []
+      },
+      "cloudwatch_filter_pattern": "{ ($.eventSource = \"cloudtrail.amazonaws.com\") && ($.eventName = \"UpdateTrail\") }",
+      "eventbridge_pattern": {
+        "source": [
+          "aws.cloudtrail"
+        ],
+        "detail-type": [
+          "AWS API Call via CloudTrail"
+        ],
+        "detail": {
+          "eventSource": [
+            "cloudtrail.amazonaws.com"
+          ],
+          "eventName": [
+            "UpdateTrail"
+          ]
+        }
+      },
+      "false_positives": [
+        "Legitimate configuration updates (adding data events, changing bucket)",
+        "Terraform apply updating trail configuration",
+        "Security team enabling additional logging features"
+      ],
+      "tuning_guidance": "Alert on all changes but review the specific modifications. Higher severity if: log file validation disabled, multi-region disabled, or S3 bucket changed to unknown bucket.",
+      "response": [
+        "1. Review the specific configuration changes made",
+        "2. Verify changes align with approved change requests",
+        "3. If log validation was disabled: Re-enable immediately",
+        "4. If S3 bucket was changed: Verify the new bucket is secure and owned by your organization",
+        "5. If multi-region was disabled: Assess coverage gap and re-enable",
+        "6. Investigate the actor if changes were unexpected"
+      ],
+      "compliance": {
+        "pci_dss": [
+          "10.2",
+          "10.5"
+        ],
+        "soc2": [
+          "CC7.2"
+        ],
+        "hipaa": [
+          "164.312(b)"
+        ],
+        "cis_aws": [
+          "3.2"
+        ]
+      },
+      "category": "logging-tampering"
+    },
+    {
+      "id": "LOG-004",
+      "name": "GuardDuty Detector Deleted",
+      "description": "Detects when GuardDuty threat detection is disabled by deleting the detector. GuardDuty provides automated threat detection, and disabling it removes a critical layer of security monitoring.",
+      "severity": "Critical",
+      "mitre_attack": {
+        "tactic": "Defense Evasion",
+        "technique_id": "T1562.008",
+        "technique_name": "Impair Defenses: Disable Cloud Logs"
+      },
+      "detection": {
+        "eventSource": "guardduty.amazonaws.com",
+        "eventName": [
+          "DeleteDetector"
+        ],
+        "conditions": []
+      },
+      "cloudwatch_filter_pattern": "{ ($.eventSource = \"guardduty.amazonaws.com\") && ($.eventName = \"DeleteDetector\") }",
+      "eventbridge_pattern": {
+        "source": [
+          "aws.cloudtrail"
+        ],
+        "detail-type": [
+          "AWS API Call via CloudTrail"
+        ],
+        "detail": {
+          "eventSource": [
+            "guardduty.amazonaws.com"
+          ],
+          "eventName": [
+            "DeleteDetector"
+          ]
+        }
+      },
+      "false_positives": [
+        "Account decommissioning",
+        "Consolidating to organization-managed GuardDuty",
+        "Cost optimization in non-production accounts (not recommended)"
+      ],
+      "tuning_guidance": "GuardDuty deletion should always alert. Even in non-production, this removes threat detection capability.",
+      "response": [
+        "1. Immediately re-enable GuardDuty",
+        "2. Check for any suppressed findings before deletion",
+        "3. Investigate the actor who deleted the detector",
+        "4. Review CloudTrail for other defense evasion activities",
+        "5. Check for active threats that may have triggered the deletion",
+        "6. Implement SCP to prevent GuardDuty deletion"
+      ],
+      "compliance": {
+        "pci_dss": [
+          "10.6"
+        ],
+        "soc2": [
+          "CC7.2"
+        ],
+        "hipaa": [
+          "164.312(b)"
+        ],
+        "cis_aws": [
+          "4.15"
+        ]
+      },
+      "category": "logging-tampering"
+    },
+    {
+      "id": "SG-001",
+      "name": "Security Group Opened to Internet on Sensitive Ports",
+      "description": "Detects when a security group is modified to allow inbound access from 0.0.0.0/0 (the entire internet) on sensitive ports such as SSH (22), RDP (3389), or database ports. This is a critical misconfiguration that directly exposes resources to attack.",
+      "severity": "Critical",
+      "mitre_attack": {
+        "tactic": "Defense Evasion",
+        "technique_id": "T1562.007",
+        "technique_name": "Impair Defenses: Disable or Modify Cloud Firewall"
+      },
+      "detection": {
+        "eventSource": "ec2.amazonaws.com",
+        "eventName": [
+          "AuthorizeSecurityGroupIngress"
+        ],
+        "conditions": [
+          "requestParameters.ipPermissions.ipRanges contains '0.0.0.0/0'",
+          "AND requestParameters.ipPermissions.fromPort in [22, 3389, 3306, 5432, 1433, 27017, 6379, 9200, 5601]"
+        ]
+      },
+      "cloudwatch_filter_pattern": "{ ($.eventSource = \"ec2.amazonaws.com\") && ($.eventName = \"AuthorizeSecurityGroupIngress\") }",
+      "eventbridge_pattern": {
+        "source": [
+          "aws.cloudtrail"
+        ],
+        "detail-type": [
+          "AWS API Call via CloudTrail"
+        ],
+        "detail": {
+          "eventSource": [
+            "ec2.amazonaws.com"
+          ],
+          "eventName": [
+            "AuthorizeSecurityGroupIngress"
+          ]
+        }
+      },
+      "sensitive_ports": {
+        "22": "SSH - Remote shell access",
+        "3389": "RDP - Windows remote desktop",
+        "3306": "MySQL database",
+        "5432": "PostgreSQL database",
+        "1433": "Microsoft SQL Server",
+        "27017": "MongoDB",
+        "6379": "Redis",
+        "9200": "Elasticsearch",
+        "5601": "Kibana"
+      },
+      "false_positives": [
+        "Intentional bastion host configuration (should use restricted IP ranges instead)",
+        "Development/test environments (should still be restricted)",
+        "Temporary troubleshooting (should be time-limited and reverted)"
+      ],
+      "tuning_guidance": "This rule should alert on any 0.0.0.0/0 access to sensitive ports regardless of environment. Consider SCP to prevent this configuration entirely.",
+      "response": [
+        "1. Immediately remove the 0.0.0.0/0 ingress rule",
+        "2. Identify all resources using this security group",
+        "3. Check for signs of compromise on exposed resources",
+        "4. Review CloudTrail for unauthorized access during exposure window",
+        "5. Replace with specific IP ranges or security group references",
+        "6. Consider implementing AWS Firewall Manager for centralized control"
+      ],
+      "compliance": {
+        "pci_dss": [
+          "1.2",
+          "1.3"
+        ],
+        "soc2": [
+          "CC6.6"
+        ],
+        "hipaa": [
+          "164.312(e)(1)"
+        ],
+        "cis_aws": [
+          "5.1",
+          "5.2"
+        ]
+      },
+      "category": "security-group-changes"
+    },
+    {
+      "id": "SG-002",
+      "name": "Security Group Allows All Inbound Traffic",
+      "description": "Detects when a security group is modified to allow all inbound traffic from the internet (0.0.0.0/0 on all ports, all protocols). This effectively disables the security group as a control.",
+      "severity": "Critical",
+      "mitre_attack": {
+        "tactic": "Defense Evasion",
+        "technique_id": "T1562.007",
+        "technique_name": "Impair Defenses: Disable or Modify Cloud Firewall"
+      },
+      "detection": {
+        "eventSource": "ec2.amazonaws.com",
+        "eventName": [
+          "AuthorizeSecurityGroupIngress"
+        ],
+        "conditions": [
+          "requestParameters.ipPermissions.ipProtocol equals '-1' (all protocols)",
+          "AND requestParameters.ipPermissions.ipRanges contains '0.0.0.0/0'"
+        ]
+      },
+      "cloudwatch_filter_pattern": "{ ($.eventSource = \"ec2.amazonaws.com\") && ($.eventName = \"AuthorizeSecurityGroupIngress\") }",
+      "eventbridge_pattern": {
+        "source": [
+          "aws.cloudtrail"
+        ],
+        "detail-type": [
+          "AWS API Call via CloudTrail"
+        ],
+        "detail": {
+          "eventSource": [
+            "ec2.amazonaws.com"
+          ],
+          "eventName": [
+            "AuthorizeSecurityGroupIngress"
+          ]
+        }
+      },
+      "false_positives": [
+        "This configuration should never be intentional in production",
+        "May occur in sandbox environments but should still be flagged"
+      ],
+      "tuning_guidance": "No false positive tuning recommended. This rule indicates a serious misconfiguration or malicious activity in all cases.",
+      "response": [
+        "1. Immediately remove the all-traffic rule",
+        "2. This is likely either severe misconfiguration or active attack",
+        "3. Treat exposed resources as potentially compromised",
+        "4. Review all activity on resources using this security group",
+        "5. Consider isolating affected resources pending investigation",
+        "6. Implement SCP to prevent this configuration"
+      ],
+      "compliance": {
+        "pci_dss": [
+          "1.2",
+          "1.3"
+        ],
+        "soc2": [
+          "CC6.6"
+        ],
+        "hipaa": [
+          "164.312(e)(1)"
+        ],
+        "cis_aws": [
+          "5.1"
+        ]
+      },
+      "category": "security-group-changes"
+    },
+    {
+      "id": "SG-003",
+      "name": "Security Group Deleted",
+      "description": "Detects when a security group is deleted. While often legitimate, security group deletion could indicate an attacker removing security controls or covering tracks after modifying network access.",
+      "severity": "Medium",
+      "mitre_attack": {
+        "tactic": "Defense Evasion",
+        "technique_id": "T1562.007",
+        "technique_name": "Impair Defenses: Disable or Modify Cloud Firewall"
+      },
+      "detection": {
+        "eventSource": "ec2.amazonaws.com",
+        "eventName": [
+          "DeleteSecurityGroup"
+        ],
+        "conditions": []
+      },
+      "cloudwatch_filter_pattern": "{ ($.eventSource = \"ec2.amazonaws.com\") && ($.eventName = \"DeleteSecurityGroup\") }",
+      "eventbridge_pattern": {
+        "source": [
+          "aws.cloudtrail"
+        ],
+        "detail-type": [
+          "AWS API Call via CloudTrail"
+        ],
+        "detail": {
+          "eventSource": [
+            "ec2.amazonaws.com"
+          ],
+          "eventName": [
+            "DeleteSecurityGroup"
+          ]
+        }
+      },
+      "false_positives": [
+        "Terraform destroy operations",
+        "Cleanup of unused security groups",
+        "Resource decommissioning"
+      ],
+      "tuning_guidance": "Correlate with change management records. Consider higher severity if deletion occurs outside change windows or by unexpected users.",
+      "response": [
+        "1. Identify the deleted security group and its previous rules",
+        "2. Verify this was an approved change",
+        "3. If unexpected: Check what resources were using this security group",
+        "4. Review if the deletion occurred after suspicious modifications",
+        "5. Check for other security-related deletions by the same actor",
+        "6. Consider implementing deletion protection for critical security groups"
+      ],
+      "compliance": {
+        "pci_dss": [
+          "1.1.1"
+        ],
+        "soc2": [
+          "CC6.6",
+          "CC8.1"
+        ],
+        "hipaa": [
+          "164.312(e)(1)"
+        ],
+        "cis_aws": [
+          "5.4"
+        ]
+      },
+      "category": "security-group-changes"
+    }
+  ]
+}
