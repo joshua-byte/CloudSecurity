@@ -60,7 +60,6 @@ CloudPulse is a local log-analysis tool. It analyses the supplied data rather th
 Detection quality depends on the available CloudTrail fields, configured rules, statistical thresholds, and the activity represented in the input dataset. Findings should be validated before taking remediation action.
 
 ## Contributors
-
-- [Your GitHub Username](https://github.com/joshua-byte)
-- [Second Contributor](https://github.com/Freya135)
-- [Second Contributor](https://github.com/anusree-krishnan)
+- [joshua-byte](https://github.com/joshua-byte)
+- [Freya135](https://github.com/Freya135)
+- [anusree-krishnan](https://github.com/anusree-krishnan)
